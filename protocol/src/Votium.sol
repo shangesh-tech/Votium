@@ -9,6 +9,23 @@ import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
  * @dev A secure on-chain voting platform with election management and result tracking
  */
 contract Votium is Ownable, Pausable {
+    error InvalidNameLength();
+    error InvalidDescriptionLength();
+    error InvalidImageLength();
+    error DeadlineMustBeInFuture();
+    error InvalidCandidateCount();
+    error EmptyCandidateName();
+    error DuplicateCandidateNames();
+    error ElectionNotFound();
+    error NotElectionCreator();
+    error ElectionAlreadyEnded();
+    error AlreadyCancelled();
+    error ElectionIsCancelled();
+    error AlreadyVoted();
+    error ElectionEnded();
+    error InvalidCandidateId();
+    error ElectionNotEndedYet();
+
     uint256 public totalElectionIds = 0;
     uint256 public immutable MIN_CANDIDATES = 2;
     uint256 public immutable MAX_CANDIDATES = 6;
@@ -21,6 +38,7 @@ contract Votium is Ownable, Pausable {
 
     struct ElectionStruct {
         address creatorAddress;
+        bool cancelled; // Packed with address in same storage slot
         string name;
         string description;
         string image;
@@ -28,7 +46,6 @@ contract Votium is Ownable, Pausable {
         uint256 deadline;
         mapping(address => bool) hasVoted;
         uint256 totalVotes;
-        bool cancelled;
     }
 
     mapping(uint256 => ElectionStruct) private elections;
@@ -68,38 +85,32 @@ contract Votium is Ownable, Pausable {
         string[] memory _candidates_names,
         uint256 _deadline
     ) public whenNotPaused {
-        require(
-            bytes(_name).length > 0 && bytes(_name).length <= 30,
-            "Invalid name length (30 characters max)"
-        );
-        require(
-            bytes(_description).length > 0 && bytes(_description).length <= 200,
-            "Invalid description length (200 characters max)"
-        );
-        require(bytes(_image).length > 0, "Invalid image length");
-        require(
-            block.timestamp + (_deadline * 1 minutes) > block.timestamp,
-            "Deadline must be in the future"
-        );
-        require(
-            _candidates_names.length >= MIN_CANDIDATES &&
-                _candidates_names.length <= MAX_CANDIDATES,
-            "Candidates count must be between 2 and 6"
-        );
+        if (bytes(_name).length == 0 || bytes(_name).length > 30)
+            revert InvalidNameLength();
+        if (bytes(_description).length == 0 || bytes(_description).length > 200)
+            revert InvalidDescriptionLength();
+        if (bytes(_image).length == 0) revert InvalidImageLength();
+        if (block.timestamp + (_deadline * 1 minutes) <= block.timestamp)
+            revert DeadlineMustBeInFuture();
+        
+        uint256 candidateCount = _candidates_names.length;
+        if (candidateCount < MIN_CANDIDATES || candidateCount > MAX_CANDIDATES)
+            revert InvalidCandidateCount();
 
-        for (uint256 i = 0; i < _candidates_names.length; i++) {
-            require(
-                bytes(_candidates_names[i]).length > 0,
-                "Candidate name cannot be empty"
-            );
+        for (uint256 i = 0; i < candidateCount;) {
+            if (bytes(_candidates_names[i]).length == 0)
+                revert EmptyCandidateName();
 
-            for (uint256 j = i + 1; j < _candidates_names.length; j++) {
-                require(
-                    keccak256(bytes(_candidates_names[i])) !=
-                        keccak256(bytes(_candidates_names[j])),
-                    "Duplicate candidate names not allowed"
-                );
+            for (uint256 j = i + 1; j < candidateCount;) {
+                if (
+                    keccak256(bytes(_candidates_names[i])) ==
+                        keccak256(bytes(_candidates_names[j]))
+                ) revert DuplicateCandidateNames();
+                
+                unchecked { ++j; }
             }
+            
+            unchecked { ++i; }
         }
 
         totalElectionIds++;
@@ -114,7 +125,7 @@ contract Votium is Ownable, Pausable {
         newElection.deadline = deadline;
         newElection.totalVotes = 0;
 
-        for (uint256 i = 0; i < _candidates_names.length; i++) {
+        for (uint256 i = 0; i < candidateCount;) {
             newElection.candidates.push(
                 CandidateStruct({
                     candidateId: i + 1,
@@ -122,6 +133,7 @@ contract Votium is Ownable, Pausable {
                     voteCount: 0
                 })
             );
+            unchecked { ++i; }
         }
         emit ElectionCreated(
             electionId,
@@ -139,19 +151,13 @@ contract Votium is Ownable, Pausable {
      * @param _electionId The ID of the election to cancel
      */
     function cancelElection(uint256 _electionId) public whenNotPaused {
-        require(
-            bytes(elections[_electionId].name).length > 0,
-            "Election not found"
-        );
-        require(
-            elections[_electionId].creatorAddress == msg.sender,
-            "Not election creator"
-        );
-        require(
-            elections[_electionId].deadline > block.timestamp,
-            "Election already ended"
-        );
-        require(!elections[_electionId].cancelled, "Already cancelled");
+        if (bytes(elections[_electionId].name).length == 0)
+            revert ElectionNotFound();
+        if (elections[_electionId].creatorAddress != msg.sender)
+            revert NotElectionCreator();
+        if (elections[_electionId].deadline <= block.timestamp)
+            revert ElectionAlreadyEnded();
+        if (elections[_electionId].cancelled) revert AlreadyCancelled();
 
         elections[_electionId].cancelled = true;
         emit ElectionCancelled(_electionId);
@@ -167,27 +173,16 @@ contract Votium is Ownable, Pausable {
         public
         whenNotPaused
     {
-        require(
-            bytes(elections[_electionId].name).length > 0,
-            "Election not found"
-        );
-        require(
-            !elections[_electionId].cancelled,
-            "Election has been cancelled"
-        );
-        require(
-            !elections[_electionId].hasVoted[msg.sender],
-            "You have already voted for this election"
-        );
-        require(
-            elections[_electionId].deadline > block.timestamp,
-            "Election has ended"
-        );
-        require(
-            _candidateId > 0 &&
-                _candidateId <= elections[_electionId].candidates.length,
-            "Invalid candidate ID"
-        );
+        if (bytes(elections[_electionId].name).length == 0)
+            revert ElectionNotFound();
+        if (elections[_electionId].cancelled)
+            revert ElectionIsCancelled();
+        if (elections[_electionId].hasVoted[msg.sender])
+            revert AlreadyVoted();
+        if (elections[_electionId].deadline <= block.timestamp)
+            revert ElectionEnded();
+        if (_candidateId == 0 || _candidateId > elections[_electionId].candidates.length)
+            revert InvalidCandidateId();
 
         elections[_electionId].hasVoted[msg.sender] = true;
         uint256 index = _candidateId - 1;
@@ -226,7 +221,7 @@ contract Votium is Ownable, Pausable {
         ElectionView[] memory electionsArr = new ElectionView[](
             totalElectionIds
         );
-        for (uint256 i = 0; i < totalElectionIds; i++) {
+        for (uint256 i = 0; i < totalElectionIds;) {
             ElectionStruct storage e = elections[i + 1];
             electionsArr[i] = ElectionView({
                 name: e.name,
@@ -237,6 +232,7 @@ contract Votium is Ownable, Pausable {
                 hasVoted: e.hasVoted[msg.sender],
                 cancelled: e.cancelled
             });
+            unchecked { ++i; }
         }
         return electionsArr;
     }
@@ -253,10 +249,9 @@ contract Votium is Ownable, Pausable {
         view
         returns (ElectionView memory)
     {
-        require(
-            bytes(elections[_electionId].name).length > 0,
-            "Election not found"
-        );
+        if (bytes(elections[_electionId].name).length == 0)
+            revert ElectionNotFound();
+        
         ElectionStruct storage e = elections[_electionId];
         return
             ElectionView({
@@ -281,14 +276,11 @@ contract Votium is Ownable, Pausable {
         view
         returns (ElectionViewResult memory)
     {
-        require(
-            bytes(elections[_electionId].name).length > 0,
-            "Election not found"
-        );
-        require(
-            elections[_electionId].deadline < block.timestamp,
-            "Election not ended yet"
-        );
+        if (bytes(elections[_electionId].name).length == 0)
+            revert ElectionNotFound();
+        if (elections[_electionId].deadline >= block.timestamp)
+            revert ElectionNotEndedYet();
+        
         ElectionStruct storage e = elections[_electionId];
         return
             ElectionViewResult({
