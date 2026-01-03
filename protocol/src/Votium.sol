@@ -278,7 +278,7 @@ contract Votium is Ownable, Pausable {
     {
         if (bytes(elections[_electionId].name).length == 0)
             revert ElectionNotFound();
-        if (elections[_electionId].deadline >= block.timestamp)
+        if (elections[_electionId].deadline > block.timestamp)
             revert ElectionNotEndedYet();
         
         ElectionStruct storage e = elections[_electionId];
