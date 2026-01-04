@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.31;
+pragma solidity ^0.8.20;
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
@@ -61,7 +61,7 @@ contract Votium is Ownable, Pausable {
 
     event VoteSubmitted(
         uint256 indexed electionId,
-        address indexed voter_address,
+        address indexed voterAddress,
         uint256 indexed candidateId
     );
 
@@ -75,14 +75,14 @@ contract Votium is Ownable, Pausable {
      * @param _name Election name (max 30 characters)
      * @param _description Election description (max 200 characters)
      * @param _image IPFS hash or image URL for election
-     * @param _candidates_names Array of candidate names (2-6 candidates)
+     * @param _candidatesNames Array of candidate names (2-6 candidates)
      * @param _deadline Duration in minutes until election ends
      */
     function createElection(
         string calldata _name,
         string calldata _description,
         string calldata _image,
-        string[] memory _candidates_names,
+        string[] memory _candidatesNames,
         uint256 _deadline
     ) public whenNotPaused {
         if (bytes(_name).length == 0 || bytes(_name).length > 30)
@@ -93,18 +93,18 @@ contract Votium is Ownable, Pausable {
         if (block.timestamp + (_deadline * 1 minutes) <= block.timestamp)
             revert DeadlineMustBeInFuture();
         
-        uint256 candidateCount = _candidates_names.length;
+        uint256 candidateCount = _candidatesNames.length;
         if (candidateCount < MIN_CANDIDATES || candidateCount > MAX_CANDIDATES)
             revert InvalidCandidateCount();
 
         for (uint256 i = 0; i < candidateCount;) {
-            if (bytes(_candidates_names[i]).length == 0)
+            if (bytes(_candidatesNames[i]).length == 0)
                 revert EmptyCandidateName();
 
             for (uint256 j = i + 1; j < candidateCount;) {
                 if (
-                    keccak256(bytes(_candidates_names[i])) ==
-                        keccak256(bytes(_candidates_names[j]))
+                    keccak256(bytes(_candidatesNames[i])) ==
+                        keccak256(bytes(_candidatesNames[j]))
                 ) revert DuplicateCandidateNames();
                 
                 unchecked { ++j; }
@@ -129,7 +129,7 @@ contract Votium is Ownable, Pausable {
             newElection.candidates.push(
                 CandidateStruct({
                     candidateId: i + 1,
-                    name: _candidates_names[i],
+                    name: _candidatesNames[i],
                     voteCount: 0
                 })
             );
