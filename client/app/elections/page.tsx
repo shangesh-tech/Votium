@@ -1,83 +1,132 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import ElectionCard from "@/components/ElectionCard";
-import { Search, Plus, Filter } from "lucide-react";
+import { Search, Plus, Filter, Loader2 } from "lucide-react";
 import Link from "next/link";
+import { useActiveAccount } from "thirdweb/react";
+import { getContract, readContract } from "thirdweb";
+import { defaultChain } from "@/lib/chains";
+import { client } from "@/lib/client";
 
-const mockElections = [
-  {
-    id: 1,
-    name: "Community Treasury Allocation",
-    description:
-      "Vote on how to allocate the Q1 2024 community treasury funds across different initiatives.",
-    image:
-      "https://images.unsplash.com/photo-1553729459-efe14ef6055d?w=800&auto=format&fit=crop&q=60",
-    deadline: Math.floor(Date.now() / 1000) + 86400 * 2,
-    totalVotes: 1247,
-    hasVoted: false,
-    cancelled: false,
-  },
-  {
-    id: 2,
-    name: "Protocol Upgrade Proposal",
-    description:
-      "Decide whether to implement the new staking mechanism proposed by the core team.",
-    image:
-      "https://images.unsplash.com/photo-1639762681485-074b7f938ba0?w=800&auto=format&fit=crop&q=60",
-    deadline: Math.floor(Date.now() / 1000) + 86400 * 5,
-    totalVotes: 892,
-    hasVoted: true,
-    cancelled: false,
-  },
-  {
-    id: 3,
-    name: "New Partnership Vote",
-    description:
-      "Vote on the proposed partnership with external DeFi protocols.",
-    image:
-      "https://images.unsplash.com/photo-1559526324-4b87b5e36e44?w=800&auto=format&fit=crop&q=60",
-    deadline: Math.floor(Date.now() / 1000) - 86400,
-    totalVotes: 2341,
-    hasVoted: true,
-    cancelled: false,
-  },
-  {
-    id: 4,
-    name: "Governance Model Update",
-    description:
-      "Proposal to update the governance voting weights and delegation system.",
-    image:
-      "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=800&auto=format&fit=crop&q=60",
-    deadline: Math.floor(Date.now() / 1000) + 86400 * 7,
-    totalVotes: 156,
-    hasVoted: false,
-    cancelled: false,
-  },
-];
+type Candidate = {
+  candidateId: bigint;
+  name: string;
+  voteCount: bigint;
+};
+
+type Election = {
+  creatorAddress: string;
+  cancelled: boolean;
+  sectionId: string;
+  name: string;
+  description: string;
+  image: string;
+  candidates: Candidate[];
+  deadline: bigint;
+  totalVotes: bigint;
+};
+
+const contract = getContract({
+  client,
+  chain: defaultChain,
+  address: process.env.NEXT_PUBLIC_VOTIUM_CONTRACT_ADDRESS!,
+});
 
 export default function Elections() {
+  const [elections, setElections] = useState<Election[] | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [filter, setFilter] = useState<"all" | "active" | "ended">("all");
-  const now = Date.now();
-  const filteredElections = mockElections
-    .filter((election) =>
-      searchQuery
-        ? election.name.toLowerCase().includes(searchQuery.toLowerCase())
-        : true
-    )
-    .filter((election) => {
-      if (filter === "all") {
+  const [userFilter, setUserFilter] = useState<"all" | "active" | "ended">(
+    "all"
+  );
+  const [isReadingElections, setIsReading] = useState(true);
+
+  const account = useActiveAccount();
+
+  const filteredElections = useMemo(() => {
+    if (!elections) return null;
+    
+    const now = Date.now();
+    
+    return elections
+      .filter((election) =>
+        searchQuery
+          ? election.name.toLowerCase().includes(searchQuery.toLowerCase())
+          : true
+      )
+      .filter((election) => {
+        if (userFilter === "all") {
+          return true;
+        }
+        
+        const deadlineMs = Number(election.deadline) * 1000;
+        
+        if (userFilter === "active") {
+          return now < deadlineMs && !election.cancelled;
+        } else if (userFilter === "ended") {
+          return now >= deadlineMs || election.cancelled;
+        }
+        
         return true;
+      });
+  }, [elections, searchQuery, userFilter]);
+
+  useEffect(() => {
+    if (!account?.address) {
+      setIsReading(false);
+      return;
+    }
+
+    const checkPortfolio = async () => {
+      try {
+        setIsReading(true);
+
+        const data = await readContract({
+          contract,
+          method:
+            "function getMyElections() view returns ((address creatorAddress, bool cancelled, bytes32 sectionId, string name, string description, string image, tuple(uint256 candidateId, string name, uint256 voteCount)[] candidates, uint256 deadline, uint256 totalVotes)[])",
+          params: [],
+          from: account.address as `0x${string}`,
+        });
+
+        console.log("Elections found:", data);
+        setElections(data as Election[]);
+      } catch (err: any) {
+        console.log("No Elections exist:", err.message);
+        setElections(null);
+      } finally {
+        setIsReading(false);
       }
-      if (filter === "active") {
-        const deadlineMs = election.deadline * 1000;
-        return now < deadlineMs && !election.cancelled;
-      } else if (filter === "ended") {
-        const deadlineMs = election.deadline * 1000;
-        return now >= deadlineMs || election.cancelled;
-      }
-    });
+    };
+
+    checkPortfolio();
+  }, [account?.address]);
+
+    if (isReadingElections) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-gray-900 mx-auto mb-4" />
+          <p className="text-gray-600">Loading your elections...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!account) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">
+            Connect Your Wallet
+          </h1>
+          <p className="text-gray-500">
+            Please connect your wallet to view/create your elections
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -113,9 +162,9 @@ export default function Elections() {
 
           <div className="flex gap-2">
             <button
-              onClick={() => setFilter("all")}
+              onClick={() => setUserFilter("all")}
               className={`inline-flex h-10 items-center justify-center rounded-lg px-4 text-sm font-medium transition-colors ${
-                filter === "all"
+                userFilter === "all"
                   ? "bg-black text-white"
                   : "bg-white text-black border border-gray-200 hover:bg-gray-50"
               }`}
@@ -123,9 +172,9 @@ export default function Elections() {
               All
             </button>
             <button
-              onClick={() => setFilter("active")}
+              onClick={() => setUserFilter("active")}
               className={`inline-flex h-10 items-center justify-center rounded-lg px-4 text-sm font-medium transition-colors ${
-                filter === "active"
+                userFilter === "active"
                   ? "bg-black text-white"
                   : "bg-white text-black border border-gray-200 hover:bg-gray-50"
               }`}
@@ -133,9 +182,9 @@ export default function Elections() {
               Active
             </button>
             <button
-              onClick={() => setFilter("ended")}
+              onClick={() => setUserFilter("ended")}
               className={`inline-flex h-10 items-center justify-center rounded-lg px-4 text-sm font-medium transition-colors ${
-                filter === "ended"
+                userFilter === "ended"
                   ? "bg-black text-white"
                   : "bg-white text-black border border-gray-200 hover:bg-gray-50"
               }`}
@@ -145,7 +194,7 @@ export default function Elections() {
           </div>
         </div>
 
-        {filteredElections.length === 0 ? (
+        {!filteredElections || filteredElections.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <Filter className="mb-4 h-12 w-12 text-gray-400" />
             <h2 className="text-xl font-semibold text-black">
@@ -157,8 +206,18 @@ export default function Elections() {
           </div>
         ) : (
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {filteredElections.map((election) => (
-              <ElectionCard key={election.id} {...election} />
+            {filteredElections.map((election, index) => (
+              <ElectionCard
+                key={election.sectionId}
+                id={index + 1}
+                name={election.name}
+                description={election.description}
+                image={election.image}
+                deadline={Number(election.deadline)}
+                totalVotes={Number(election.totalVotes)}
+                hasVoted={false}
+                cancelled={election.cancelled}
+              />
             ))}
           </div>
         )}

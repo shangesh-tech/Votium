@@ -1,43 +1,146 @@
 "use client";
 
+import { use, useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Trophy, Users, Clock } from "lucide-react";
+import { ArrowLeft, Trophy, Users, Clock, Loader2 } from "lucide-react";
+import { useActiveAccount } from "thirdweb/react";
+import { getContract, readContract } from "thirdweb";
+import { defaultChain } from "@/lib/chains";
+import { client } from "@/lib/client";
+import toast from "react-hot-toast";
 
-// Mock data - in real app, use useEffect to fetch based on id
-const mockResults = {
-  id: 1,
-  name: "Community Treasury Allocation",
-  description: "Vote on how to allocate the Q1 2024 community treasury funds across different initiatives. This includes development grants, marketing campaigns, and community rewards.",
-  image: "https://images.unsplash.com/photo-1553729459-efe14ef6055d?w=800&auto=format&fit=crop&q=60",
-  deadline: Math.floor(Date.now() / 1000) + 86400 * 2,
-  totalVotes: 1247,
-  hasVoted: true,
-  cancelled: false,
-  candidates: [
-    { candidateId: 1, name: "Development Grants", voteCount: 456 },
-    { candidateId: 2, name: "Marketing Campaign", voteCount: 342 },
-    { candidateId: 3, name: "Community Rewards", voteCount: 289 },
-    { candidateId: 4, name: "Reserve Fund", voteCount: 160 },
-  ],
+type Candidate = {
+  candidateId: bigint;
+  name: string;
+  voteCount: bigint;
 };
 
-export default function Results({ params }: { params: { id: string } }) {
-  const router = useRouter();
+type ElectionViewResult = {
+  name: string;
+  description: string;
+  image: string;
+  deadline: bigint;
+  totalVotes: bigint;
+  candidates: Candidate[];
+  hasVoted: boolean;
+  cancelled: boolean;
+};
 
-  const sortedCandidates = [...mockResults.candidates].sort(
-    (a, b) => b.voteCount - a.voteCount
-  );
+const contract = getContract({
+  client,
+  chain: defaultChain,
+  address: process.env.NEXT_PUBLIC_VOTIUM_CONTRACT_ADDRESS!,
+});
+
+export default function Results({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
+  const router = useRouter();
+  const account = useActiveAccount();
+  
+  const [election, setElection] = useState<ElectionViewResult | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    if (!account?.address || !id) {
+      setIsLoading(false);
+      return;
+    }
+
+    const fetchResults = async () => {
+      try {
+        setIsLoading(true);
+        const data = await readContract({
+          contract,
+          method:
+            "function getElectionByIdWithResult(uint256 _electionId) view returns ((string name, string description, string image, uint256 deadline, uint256 totalVotes, tuple(uint256 candidateId, string name, uint256 voteCount)[] candidates, bool hasVoted, bool cancelled))",
+          params: [BigInt(id)],
+          from: account.address as `0x${string}`,
+        });
+
+        setElection(data as ElectionViewResult);
+      } catch (err: any) {
+        console.error("Error fetching results:", err);
+        toast.error("Failed to load results. Election may not have ended yet.");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchResults();
+  }, [account?.address, id]);
+
+  const sortedCandidates = useMemo(() => {
+    if (!election) return [];
+    return [...election.candidates].sort(
+      (a, b) => Number(b.voteCount) - Number(a.voteCount)
+    );
+  }, [election]);
 
   const winner = sortedCandidates[0];
-  const now = Date.now();
-  const deadlineMs = mockResults.deadline * 1000;
+  const now = useMemo(() => Date.now(), [election]);
+  const deadlineMs = election ? Number(election.deadline) * 1000 : 0;
   const isEnded = now > deadlineMs;
   
-  const endDate = new Date(mockResults.deadline * 1000).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+  const endDate = election
+    ? new Date(Number(election.deadline) * 1000).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      })
+    : "";
+
+  if (!account) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="flex items-center justify-center py-20">
+          <div className="text-center">
+            <h1 className="text-2xl font-bold text-gray-900 mb-4">
+              Connect Your Wallet
+            </h1>
+            <p className="text-gray-500">
+              Please connect your wallet to view election results
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="flex items-center justify-center py-20">
+          <div className="text-center">
+            <Loader2 className="h-8 w-8 animate-spin text-gray-900 mx-auto mb-4" />
+            <p className="text-gray-600">Loading results...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!election) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="flex items-center justify-center py-20">
+          <div className="text-center">
+            <h1 className="text-2xl font-bold text-gray-900 mb-4">
+              Results Not Available
+            </h1>
+            <p className="text-gray-600 mb-4">
+              This election may not have ended yet or doesn&apos;t exist.
+            </p>
+            <button
+              onClick={() => router.push("/elections")}
+              className="text-black underline hover:text-gray-700"
+            >
+              Back to Elections
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -54,8 +157,8 @@ export default function Results({ params }: { params: { id: string } }) {
           <div className="lg:col-span-3">
             <div className="overflow-hidden rounded-xl">
               <img
-                src={mockResults.image}
-                alt={mockResults.name}
+                src={election.image}
+                alt={election.name}
                 className="aspect-video w-full object-cover"
               />
             </div>
@@ -63,10 +166,10 @@ export default function Results({ params }: { params: { id: string } }) {
             <div className="mt-6">
               <div className="flex items-start justify-between gap-4">
                 <h1 className="text-3xl font-bold text-black md:text-4xl">
-                  {mockResults.name}
+                  {election.name}
                 </h1>
                 <span className="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-800">
-                  {isEnded ? "Ended" : "Active"}
+                  {election.cancelled ? "Cancelled" : isEnded ? "Ended" : "Active"}
                 </span>
               </div>
               
@@ -77,11 +180,11 @@ export default function Results({ params }: { params: { id: string } }) {
                 </div>
                 <div className="flex items-center gap-1">
                   <Users className="h-4 w-4" />
-                  <span>{mockResults.totalVotes.toLocaleString()} total votes</span>
+                  <span>{Number(election.totalVotes).toLocaleString()} total votes</span>
                 </div>
               </div>
               
-              <p className="mt-6 text-gray-700 leading-relaxed">{mockResults.description}</p>
+              <p className="mt-6 text-gray-700 leading-relaxed">{election.description}</p>
             </div>
           </div>
 
@@ -96,11 +199,13 @@ export default function Results({ params }: { params: { id: string } }) {
               
               <div className="space-y-4 p-6">
                 {sortedCandidates.map((candidate, index) => {
-                  const percentage = (candidate.voteCount / mockResults.totalVotes) * 100;
+                  const percentage = Number(election.totalVotes) > 0
+                    ? (Number(candidate.voteCount) / Number(election.totalVotes)) * 100
+                    : 0;
                   const isWinner = index === 0 && isEnded;
                   
                   return (
-                    <div key={candidate.candidateId} className="space-y-2">
+                    <div key={Number(candidate.candidateId)} className="space-y-2">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           {isWinner && (
@@ -121,18 +226,20 @@ export default function Results({ params }: { params: { id: string } }) {
                         />
                       </div>
                       <p className="text-xs text-gray-500">
-                        {candidate.voteCount.toLocaleString()} votes
+                        {Number(candidate.voteCount).toLocaleString()} votes
                       </p>
                     </div>
                   );
                 })}
                 
-                {isEnded && (
+                {isEnded && winner && (
                   <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4 text-center">
                     <p className="text-sm text-gray-600">Winner</p>
                     <p className="mt-1 font-semibold text-black">{winner.name}</p>
                     <p className="text-sm text-gray-600">
-                      with {((winner.voteCount / mockResults.totalVotes) * 100).toFixed(1)}% of votes
+                      with {Number(election.totalVotes) > 0 
+                        ? ((Number(winner.voteCount) / Number(election.totalVotes)) * 100).toFixed(1)
+                        : 0}% of votes
                     </p>
                   </div>
                 )}

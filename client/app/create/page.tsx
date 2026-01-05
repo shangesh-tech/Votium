@@ -2,11 +2,24 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, ArrowLeft } from "lucide-react";
+import { Plus, Trash2, ArrowLeft, Loader2 } from "lucide-react";
+import { useActiveAccount, useSendTransaction } from "thirdweb/react";
+import { getContract, prepareContractCall } from "thirdweb";
+import { defaultChain } from "@/lib/chains";
+import { client } from "@/lib/client";
 import toast from "react-hot-toast";
+
+const contract = getContract({
+  client,
+  chain: defaultChain,
+  address: process.env.NEXT_PUBLIC_VOTIUM_CONTRACT_ADDRESS!,
+});
 
 export default function CreateElection() {
   const router = useRouter();
+  const account = useActiveAccount();
+  const { mutate: sendTransaction, isPending } = useSendTransaction();
+  
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [image, setImage] = useState("");
@@ -31,41 +44,76 @@ export default function CreateElection() {
     setCandidates(updated);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!account) {
+      toast.error("Please connect your wallet first");
+      return;
+    }
 
     // Validation
     if (!name || name.length > 30) {
-      alert("Name must be 1-30 characters");
+      toast.error("Name must be 1-30 characters");
       return;
     }
     if (!description || description.length > 200) {
-      alert("Description must be 1-200 characters");
+      toast.error("Description must be 1-200 characters");
       return;
     }
     if (!image) {
-      alert("Image URL is required");
+      toast.error("Image URL is required");
       return;
     }
-    if (!deadline) {
-      alert("Deadline is required");
+    if (!deadline || Number(deadline) <= 0) {
+      toast.error("Deadline must be greater than 0 minutes");
       return;
     }
     if (candidates.some((c) => !c.trim())) {
-      alert("All candidate names are required");
+      toast.error("All candidate names are required");
       return;
     }
 
-    toast
-      .promise(new Promise((resolve) => setTimeout(resolve, 2000)), {
-        loading: "Creating election...",
-        success: <b>Election created successfully!</b>,
-        error: <b>Could not create election.</b>,
-      })
-      .then(() => {
-        router.push("/elections");
+    try {
+      const transaction = prepareContractCall({
+        contract,
+        method:
+          "function createElection(string _name, string _description, string _image, string[] _candidatesNames, uint256 _deadline)",
+        params: [name, description, image, candidates, BigInt(deadline)],
       });
+
+      sendTransaction(transaction, {
+        onSuccess: () => {
+          toast.success("Election created successfully!");
+          router.push("/elections");
+        },
+        onError: (error) => {
+          console.error("Error creating election:", error);
+          toast.error("Failed to create election");
+        },
+      });
+    } catch (error) {
+      console.error("Transaction error:", error);
+      toast.error("Failed to prepare transaction");
+    }
   };
+
+  if (!account) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="flex items-center justify-center py-20">
+          <div className="text-center">
+            <h1 className="text-2xl font-bold text-gray-900 mb-4">
+              Connect Your Wallet
+            </h1>
+            <p className="text-gray-500">
+              Please connect your wallet to create an election
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -208,9 +256,17 @@ export default function CreateElection() {
 
               <button
                 type="submit"
-                className="inline-flex h-12 w-full items-center justify-center rounded-lg bg-black text-sm font-medium text-white transition-colors hover:bg-gray-800"
+                disabled={isPending}
+                className="inline-flex h-12 w-full items-center justify-center rounded-lg bg-black text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Create Election
+                {isPending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  "Create Election"
+                )}
               </button>
             </form>
           </div>
