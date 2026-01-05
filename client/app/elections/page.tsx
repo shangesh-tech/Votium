@@ -2,7 +2,14 @@
 
 import { useEffect, useState, useMemo } from "react";
 import ElectionCard from "@/components/ElectionCard";
-import { Search, Plus, Filter, Loader2 } from "lucide-react";
+import {
+  Search,
+  Plus,
+  Filter,
+  Loader2,
+  ExternalLink,
+  Shield
+} from "lucide-react";
 import Link from "next/link";
 import { useActiveAccount } from "thirdweb/react";
 import { getContract, readContract } from "thirdweb";
@@ -24,6 +31,13 @@ const contract = getContract({
   chain: defaultChain,
   address: process.env.NEXT_PUBLIC_VOTIUM_CONTRACT_ADDRESS!,
 });
+
+// Get chain explorer URL
+const getExplorerUrl = () => {
+  const explorerBaseUrl =
+    defaultChain.blockExplorers?.[0]?.url;
+  return `${explorerBaseUrl}/address/${process.env.NEXT_PUBLIC_VOTIUM_CONTRACT_ADDRESS}`;
+};
 
 export default function Elections() {
   const [elections, setElections] = useState<ElectionView[] | null>(null);
@@ -232,6 +246,33 @@ export default function Elections() {
             ))}
           </div>
         )}
+
+        <div className="mt-12 flex justify-center">
+          <a
+            href={getExplorerUrl()}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="group inline-flex items-center gap-3 px-6 py-3 rounded-full bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 hover:border-green-300 transition-all duration-300 hover:shadow-lg hover:scale-105"
+          >
+            <div className="flex items-center justify-center w-10 h-10 rounded-full bg-green-100 group-hover:bg-green-200 transition-colors">
+              <Shield className="w-5 h-5 text-green-600" />
+            </div>
+            <div className="flex flex-col items-start">
+              <span className="text-sm font-semibold text-green-700 flex items-center gap-2">
+                Verified Blockchain Contract
+                <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-green-200 text-green-800">
+                  Base
+                </span>
+              </span>
+              <span className="text-xs text-green-600/70 font-mono mt-0.5">
+                {process.env.NEXT_PUBLIC_VOTIUM_CONTRACT_ADDRESS?.slice(0, 6)}
+                ...
+                {process.env.NEXT_PUBLIC_VOTIUM_CONTRACT_ADDRESS?.slice(-4)}
+              </span>
+            </div>
+            <ExternalLink className="w-4 h-4 text-green-600 opacity-0 group-hover:opacity-100 transition-opacity" />
+          </a>
+        </div>
 
         <div className="mt-10 flex flex-col items-center animate-fade-in-up">
           <div className="flex items-center gap-3 px-5 py-2.5 rounded-full bg-white/50 backdrop-blur-sm border border-white/60 shadow-sm hover:shadow-md transition-all duration-300">

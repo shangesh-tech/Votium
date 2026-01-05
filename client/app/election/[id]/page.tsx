@@ -41,9 +41,27 @@ export default function ElectionDetail({ params }: { params: Promise<{ id: strin
   
   const [election, setElection] = useState<ElectionWithCandidates | null>(null);
   const [selectedCandidate, setSelectedCandidate] = useState<string>("");
-  const [sectionId, setSectionId] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
   const [imageUrl, setImageUrl] = useState<string>("");
+
+  // Extract section ID from email (e.g., shangesh.s.s69@kalvium.community -> s69)
+  const extractSectionId = (): string => {
+    // Try to get email from account metadata or use a default pattern
+    // This assumes the email is stored in account metadata or you have a way to get it
+    const email = (account as any)?.email || "";
+    
+    if (email) {
+      // Pattern: username.s.SECTION@domain -> extract SECTION
+      const match = email.match(/\.s\.([^@]+)@/);
+      if (match && match[1]) {
+        return match[1];
+      }
+    }
+    
+    // Fallback: You might need to implement your own logic to get the email
+    // For now, return empty string if pattern not found
+    return "";
+  };
 
   const now = useMemo(() => Date.now(), [election]);
   const deadlineMs = election ? Number(election.deadline) * 1000 : 0;
@@ -152,8 +170,10 @@ export default function ElectionDetail({ params }: { params: Promise<{ id: strin
       toast.error("Please select a candidate");
       return;
     }
+    
+    const sectionId = extractSectionId();
     if (!sectionId) {
-      toast.error("Please enter your section ID");
+      toast.error("Could not determine your section ID. Please ensure your email is in the correct format.");
       return;
     }
 
@@ -324,23 +344,6 @@ export default function ElectionDetail({ params }: { params: Promise<{ id: strin
                   </div>
                 ) : (
                   <>
-                    <div className="mb-4 space-y-2">
-                      <label
-                        htmlFor="sectionId"
-                        className="text-sm font-medium text-black"
-                      >
-                        Your Section ID
-                      </label>
-                      <input
-                        id="sectionId"
-                        type="text"
-                        placeholder='Enter your section ID (e.g., "S69")'
-                        value={sectionId}
-                        onChange={(e) => setSectionId(e.target.value)}
-                        className="flex h-11 w-full rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
-                      />
-                    </div>
-                    
                     <p className="mb-4 text-sm text-gray-600">
                       Select a candidate below to cast your vote. Note: Votes are permanent and cannot be changed.
                     </p>
