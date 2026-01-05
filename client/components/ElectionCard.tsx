@@ -1,5 +1,10 @@
+"use client";
+
 import Link from "next/link";
 import { Clock, Users, ArrowRight } from "lucide-react";
+import { useState, useEffect } from "react";
+import { resolveScheme } from "thirdweb/storage";
+import { client } from "@/lib/client";
 
 interface ElectionCardProps {
   id: number;
@@ -22,6 +27,34 @@ const ElectionCard = ({
   hasVoted,
   cancelled,
 }: ElectionCardProps) => {
+  const [imageUrl, setImageUrl] = useState<string>(image);
+  
+  useEffect(() => {
+    const resolveImage = async () => {
+      if (image) {
+        try {
+          if (image.startsWith('ipfs://')) {
+            const resolved = await resolveScheme({
+              client,
+              uri: image,
+            });
+            setImageUrl(resolved);
+          } else if (image.startsWith('http')) {
+            // Already an HTTP URL
+            setImageUrl(image);
+          } else {
+            // Assume it's an IPFS hash and construct the URL
+            setImageUrl(`https://ipfs.io/ipfs/${image}`);
+          }
+        } catch (error) {
+          console.error("Error resolving image:", error);
+          setImageUrl(image); // Fallback to original
+        }
+      }
+    };
+    resolveImage();
+  }, [image]);
+  
   const now = Date.now();
   const deadlineMs = deadline * 1000;
   const isEnded = now > deadlineMs;
@@ -50,7 +83,7 @@ const ElectionCard = ({
     <div className="group overflow-hidden rounded-xl border border-gray-200 bg-white transition-shadow hover:shadow-lg">
       <div className="relative aspect-video overflow-hidden">
         <img
-          src={image}
+          src={imageUrl}
           alt={name}
           className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
         />

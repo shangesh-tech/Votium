@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, Clock, Users, CheckCircle2, BarChart3, Loader2 } from "lucide-react";
 import { useActiveAccount, useSendTransaction } from "thirdweb/react";
 import { getContract, prepareContractCall, readContract } from "thirdweb";
+import { resolveScheme } from "thirdweb/storage";
 import { defaultChain } from "@/lib/chains";
 import { client } from "@/lib/client";
 import toast from "react-hot-toast";
@@ -42,6 +43,7 @@ export default function ElectionDetail({ params }: { params: Promise<{ id: strin
   const [selectedCandidate, setSelectedCandidate] = useState<string>("");
   const [sectionId, setSectionId] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
+  const [imageUrl, setImageUrl] = useState<string>("");
 
   const now = useMemo(() => Date.now(), [election]);
   const deadlineMs = election ? Number(election.deadline) * 1000 : 0;
@@ -58,13 +60,72 @@ export default function ElectionDetail({ params }: { params: Promise<{ id: strin
         setIsLoading(true);
         const data = await readContract({
           contract,
-          method:
-            "function getElectionWithCandidates(uint256 _electionId) view returns ((string name, string description, string image, uint256 deadline, uint256 totalVotes, tuple(uint32 candidateId, uint32 voteCount, string name)[] candidates, bool hasVoted, bool cancelled))",
+          method: {
+            name: "getElectionWithCandidates",
+            type: "function",
+            stateMutability: "view",
+            inputs: [{ name: "_electionId", type: "uint256" }],
+            outputs: [
+              {
+                name: "",
+                type: "tuple",
+                components: [
+                  { name: "name", type: "string" },
+                  { name: "description", type: "string" },
+                  { name: "image", type: "string" },
+                  { name: "deadline", type: "uint256" },
+                  { name: "totalVotes", type: "uint256" },
+                  {
+                    name: "candidates",
+                    type: "tuple[]",
+                    components: [
+                      { name: "candidateId", type: "uint32" },
+                      { name: "voteCount", type: "uint32" },
+                      { name: "name", type: "string" }
+                    ]
+                  },
+                  { name: "hasVoted", type: "bool" },
+                  { name: "cancelled", type: "bool" }
+                ]
+              }
+            ]
+          },
           params: [BigInt(id)],
           from: account.address as `0x${string}`,
         });
 
-        setElection(data as ElectionWithCandidates);
+        const electionData = {
+          name: data.name,
+          description: data.description,
+          image: data.image,
+          deadline: data.deadline,
+          totalVotes: data.totalVotes,
+          candidates: data.candidates.map(c => ({
+            candidateId: BigInt(c.candidateId),
+            voteCount: BigInt(c.voteCount),
+            name: c.name
+          })),
+          hasVoted: data.hasVoted,
+          cancelled: data.cancelled
+        };
+        setElection(electionData);
+        
+        // Resolve IPFS URL to HTTP only if it's an IPFS URI
+        if (data.image) {
+          if (data.image.startsWith('ipfs://')) {
+            const resolved = await resolveScheme({
+              client,
+              uri: data.image,
+            });
+            setImageUrl(resolved);
+          } else if (data.image.startsWith('http')) {
+            // Already an HTTP URL
+            setImageUrl(data.image);
+          } else {
+            // Assume it's an IPFS hash and construct the URL
+            setImageUrl(`https://ipfs.io/ipfs/${data.image}`);
+          }
+        }
       } catch (err: any) {
         console.error("Error fetching election:", err);
         toast.error("Failed to load election");
@@ -192,7 +253,7 @@ export default function ElectionDetail({ params }: { params: Promise<{ id: strin
           <div className="lg:col-span-3">
             <div className="overflow-hidden rounded-xl">
               <img
-                src={election.image}
+                src={imageUrl || election.image}
                 alt={election.name}
                 className="aspect-video w-full object-cover"
               />

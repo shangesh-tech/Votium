@@ -86,6 +86,10 @@ export default function CustomConnector() {
         chain={defaultChain}
         autoConnect={true}
         theme="light"
+        accountAbstraction={{
+          chain: defaultChain,
+          sponsorGas: true,
+        }}
         connectModal={{
           size: "wide",
           title: "Connect to Base in Votium",

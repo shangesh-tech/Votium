@@ -75,8 +75,27 @@ export default function Elections() {
 
         const data = await readContract({
           contract,
-          method:
-            "function getElections() view returns ((string name, string description, string image, uint256 deadline, uint256 totalVotes, bool hasVoted, bool cancelled)[])",
+          method: {
+            name: "getElections",
+            type: "function",
+            stateMutability: "view",
+            inputs: [],
+            outputs: [
+              {
+                name: "",
+                type: "tuple[]",
+                components: [
+                  { name: "name", type: "string" },
+                  { name: "description", type: "string" },
+                  { name: "image", type: "string" },
+                  { name: "deadline", type: "uint256" },
+                  { name: "totalVotes", type: "uint256" },
+                  { name: "hasVoted", type: "bool" },
+                  { name: "cancelled", type: "bool" }
+                ]
+              }
+            ]
+          },
           params: [],
           from: account.address as `0x${string}`,
         });

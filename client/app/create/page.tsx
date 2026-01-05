@@ -107,12 +107,20 @@ export default function CreateElection() {
       setIsUploading(true);
       toast.loading("Uploading image to IPFS...", { id: "upload" });
       
-      const uris = await upload({
+      const uploadedUri = await upload({
         client,
         files: [selectedFile],
       });
       
-      const imageUrl = uris[0];
+      console.log("Upload response:", uploadedUri);
+      // The upload function returns the URI directly as a string
+      const imageUrl = typeof uploadedUri === 'string' ? uploadedUri : uploadedUri[0];
+      console.log("Image URL:", imageUrl);
+      
+      if (!imageUrl || imageUrl.length < 10) {
+        throw new Error("Invalid IPFS URL returned");
+      }
+      
       toast.success("Image uploaded successfully!", { id: "upload" });
       setIsUploading(false);
 

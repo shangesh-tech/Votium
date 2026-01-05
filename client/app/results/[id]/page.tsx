@@ -5,9 +5,9 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, Trophy, Users, Clock, Loader2 } from "lucide-react";
 import { useActiveAccount } from "thirdweb/react";
 import { getContract, readContract } from "thirdweb";
+import { resolveScheme } from "thirdweb/storage";
 import { defaultChain } from "@/lib/chains";
 import { client } from "@/lib/client";
-import toast from "react-hot-toast";
 
 type Candidate = {
   candidateId: bigint;
@@ -39,6 +39,16 @@ export default function Results({ params }: { params: Promise<{ id: string }> })
   
   const [election, setElection] = useState<ElectionViewResult | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [imageUrl, setImageUrl] = useState<string>("");
+  const [currentTime, setCurrentTime] = useState(Date.now());
+
+  // Update timer every second
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     if (!account?.address || !id) {
@@ -51,16 +61,74 @@ export default function Results({ params }: { params: Promise<{ id: string }> })
         setIsLoading(true);
         const data = await readContract({
           contract,
-          method:
-            "function getElectionByIdWithResult(uint256 _electionId) view returns ((string name, string description, string image, uint256 deadline, uint256 totalVotes, tuple(uint32 candidateId, uint32 voteCount, string name)[] candidates, bool hasVoted, bool cancelled))",
+          method: {
+            name: "getElectionByIdWithResult",
+            type: "function",
+            stateMutability: "view",
+            inputs: [{ name: "_electionId", type: "uint256" }],
+            outputs: [
+              {
+                name: "",
+                type: "tuple",
+                components: [
+                  { name: "name", type: "string" },
+                  { name: "description", type: "string" },
+                  { name: "image", type: "string" },
+                  { name: "deadline", type: "uint256" },
+                  { name: "totalVotes", type: "uint256" },
+                  {
+                    name: "candidates",
+                    type: "tuple[]",
+                    components: [
+                      { name: "candidateId", type: "uint32" },
+                      { name: "voteCount", type: "uint32" },
+                      { name: "name", type: "string" }
+                    ]
+                  },
+                  { name: "hasVoted", type: "bool" },
+                  { name: "cancelled", type: "bool" }
+                ]
+              }
+            ]
+          },
           params: [BigInt(id)],
           from: account.address as `0x${string}`,
         });
 
-        setElection(data as ElectionViewResult);
+        const electionData = {
+          name: data.name,
+          description: data.description,
+          image: data.image,
+          deadline: data.deadline,
+          totalVotes: data.totalVotes,
+          candidates: data.candidates.map(c => ({
+            candidateId: BigInt(c.candidateId),
+            voteCount: BigInt(c.voteCount),
+            name: c.name
+          })),
+          hasVoted: data.hasVoted,
+          cancelled: data.cancelled
+        };
+        setElection(electionData);
+        
+        // Resolve IPFS URL to HTTP only if it's an IPFS URI
+        if (data.image) {
+          if (data.image.startsWith('ipfs://')) {
+            const resolved = await resolveScheme({
+              client,
+              uri: data.image,
+            });
+            setImageUrl(resolved);
+          } else if (data.image.startsWith('http')) {
+            // Already an HTTP URL
+            setImageUrl(data.image);
+          } else {
+            // Assume it's an IPFS hash and construct the URL
+            setImageUrl(`https://ipfs.io/ipfs/${data.image}`);
+          }
+        }
       } catch (err: any) {
         console.error("Error fetching results:", err);
-        toast.error("Failed to load results. Election may not have ended yet.");
       } finally {
         setIsLoading(false);
       }
@@ -77,9 +145,29 @@ export default function Results({ params }: { params: Promise<{ id: string }> })
   }, [election]);
 
   const winner = sortedCandidates[0];
-  const now = useMemo(() => Date.now(), [election]);
+  
+  // Check if it's a tie (all candidates have same vote count)
+  const isTie = useMemo(() => {
+    if (!election || election.candidates.length === 0) return false;
+    const firstVoteCount = election.candidates[0].voteCount;
+    return election.candidates.every(c => c.voteCount === firstVoteCount);
+  }, [election]);
+  
   const deadlineMs = election ? Number(election.deadline) * 1000 : 0;
-  const isEnded = now > deadlineMs;
+  const isEnded = currentTime > deadlineMs;
+  
+  const formatTimeLeft = () => {
+    if (isEnded) return "Ended";
+    const diff = deadlineMs - currentTime;
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+    
+    if (days > 0) return `${days}d ${hours}h ${minutes}m`;
+    if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
+    return `${minutes}m ${seconds}s`;
+  };
   
   const endDate = election
     ? new Date(Number(election.deadline) * 1000).toLocaleDateString("en-US", {
@@ -123,17 +211,29 @@ export default function Results({ params }: { params: Promise<{ id: string }> })
     return (
       <div className="min-h-screen bg-gray-50">
         <div className="flex items-center justify-center py-20">
-          <div className="text-center">
+          <div className="text-center max-w-md">
+            <div className="mb-6 inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-100">
+              <Clock className="h-8 w-8 text-blue-600 animate-pulse" />
+            </div>
             <h1 className="text-2xl font-bold text-gray-900 mb-4">
-              Results Not Available
+              Election In Progress
             </h1>
-            <p className="text-gray-600 mb-4">
-              This election may not have ended yet or doesn&apos;t exist.
+            <p className="text-gray-600 mb-6">
+              This election is currently ongoing. Results will be available once the voting period ends.
             </p>
+            {deadlineMs > 0 && (
+              <div className="mb-6 p-4 bg-white rounded-lg border border-gray-200">
+                <p className="text-sm text-gray-500 mb-2">Time Remaining</p>
+                <p className="text-3xl font-bold text-black">
+                  {formatTimeLeft()}
+                </p>
+              </div>
+            )}
             <button
               onClick={() => router.push("/elections")}
-              className="text-black underline hover:text-gray-700"
+              className="inline-flex items-center gap-2 text-black hover:underline"
             >
+              <ArrowLeft className="h-4 w-4" />
               Back to Elections
             </button>
           </div>
@@ -157,7 +257,7 @@ export default function Results({ params }: { params: Promise<{ id: string }> })
           <div className="lg:col-span-3">
             <div className="overflow-hidden rounded-xl">
               <img
-                src={election.image}
+                src={imageUrl || election.image}
                 alt={election.name}
                 className="aspect-video w-full object-cover"
               />
@@ -202,7 +302,7 @@ export default function Results({ params }: { params: Promise<{ id: string }> })
                   const percentage = Number(election.totalVotes) > 0
                     ? (Number(candidate.voteCount) / Number(election.totalVotes)) * 100
                     : 0;
-                  const isWinner = index === 0 && isEnded;
+                  const isWinner = index === 0 && isEnded && !isTie;
                   
                   return (
                     <div key={Number(candidate.candidateId)} className="space-y-2">
@@ -232,22 +332,44 @@ export default function Results({ params }: { params: Promise<{ id: string }> })
                   );
                 })}
                 
-                {isEnded && winner && (
+                {isEnded && (
                   <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4 text-center">
-                    <p className="text-sm text-gray-600">Winner</p>
-                    <p className="mt-1 font-semibold text-black">{winner.name}</p>
-                    <p className="text-sm text-gray-600">
-                      with {Number(election.totalVotes) > 0 
-                        ? ((Number(winner.voteCount) / Number(election.totalVotes)) * 100).toFixed(1)
-                        : 0}% of votes
+                    <p className="text-sm text-gray-600 mb-2">
+                      {isTie ? "Result" : "Winner"}
                     </p>
+                    {isTie ? (
+                      <div>
+                        <p className="text-xl font-bold text-gray-900 mb-1">🤝 Tie</p>
+                        <p className="text-sm text-gray-500">
+                          All candidates have equal votes
+                        </p>
+                      </div>
+                    ) : winner ? (
+                      <div>
+                        <p className="text-xl font-bold text-black mb-1">
+                          🏆 {winner.name}
+                        </p>
+                        <p className="text-sm text-gray-600">
+                          with {Number(election.totalVotes) > 0 
+                            ? ((Number(winner.voteCount) / Number(election.totalVotes)) * 100).toFixed(1)
+                            : 0}% of votes
+                        </p>
+                      </div>
+                    ) : null}
                   </div>
                 )}
                 
                 {!isEnded && (
                   <div className="mt-6 rounded-lg border border-blue-200 bg-blue-50 p-4 text-center">
-                    <p className="text-sm text-blue-800">
-                      Voting is still in progress. Results may change.
+                    <Clock className="h-5 w-5 text-blue-600 mx-auto mb-2 animate-pulse" />
+                    <p className="text-sm font-medium text-blue-900 mb-1">
+                      Election In Progress
+                    </p>
+                    <p className="text-xs text-blue-700 mb-2">
+                      Time remaining: {formatTimeLeft()}
+                    </p>
+                    <p className="text-xs text-blue-600">
+                      Results may change until voting ends
                     </p>
                   </div>
                 )}
