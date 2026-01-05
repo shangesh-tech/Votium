@@ -25,55 +25,42 @@ contract Votium is Ownable, Pausable {
     error ElectionEnded();
     error InvalidCandidateId();
     error ElectionNotEndedYet();
+    error InvalidSectionId();
 
     uint256 public totalElectionIds = 0;
     uint256 public immutable MIN_CANDIDATES = 2;
     uint256 public immutable MAX_CANDIDATES = 6;
 
     struct CandidateStruct {
-        uint256 candidateId;
+        //---- Slot 0 (packed) with 8 bytes and padding 24 ----
+        uint32 candidateId;
+        uint32 voteCount;
+        // --- slot 1 ---- 32 bytes
         string name;
-        uint256 voteCount;
     }
 
     struct ElectionStruct {
-        address creatorAddress;
-        bool cancelled; // Packed with address in same storage slot
-        bytes32  sectionId;
+        // ---- Slot 0 (packed) ----
+        address creatorAddress; // 20 bytes
+        bool cancelled; // 1 byte Packed with address in same storage slot
+        // 11 bytes padding
+
+        // ---- Slot 1 ----
+        bytes32 sectionId; // keccak256("S69") or keccak256("All") - 32 bytes
+        // ---- Slot 2 ----
+        uint64 deadline; // 8 bytes
+        // 24 bytes padding
+        // ---- Slot 3 ----
+        uint256 totalVotes; // 32 bytes - prevents overflow
+
+        // ---- Dynamic data ---- 32 bytes each
         string name;
         string description;
         string image;
         CandidateStruct[] candidates;
-        uint256 deadline;
+        // ---- Always last ---- 32 bytes
         mapping(address => bool) hasVoted;
-        uint256 totalVotes;
     }
-
-//     struct ElectionStruct {
-//     // ---- Slot 0 (packed) ----
-//     address creatorAddress; // 20 bytes
-//     bool cancelled;         // 1 byte
-
-//     // 11 bytes padding
-
-//     // ---- Slot 1 ----
-//     bytes32 sectionId;      // keccak256("S69")
-
-//     // ---- Slot 2 ----
-//     uint64 deadline;    // 8 bytes  
-//     uint32 totalVotes;  // 4 bytes  
-//     // 20 bytes padding
-
-//     // ---- Dynamic data ----
-//     string name;
-//     string description;
-//     string image;
-//     CandidateStruct[] candidates;
-
-//     // ---- Always last ----
-//     mapping(address => bool) hasVoted;
-// }
-
 
     mapping(uint256 => ElectionStruct) private elections;
 
@@ -102,6 +89,7 @@ contract Votium is Ownable, Pausable {
      * @param _name Election name (max 30 characters)
      * @param _description Election description (max 200 characters)
      * @param _image IPFS hash or image URL for election
+     * @param _sectionId Section identifier (e.g., "S69" or "All")
      * @param _candidatesNames Array of candidate names (2-6 candidates)
      * @param _deadline Duration in minutes until election ends
      */
@@ -109,6 +97,7 @@ contract Votium is Ownable, Pausable {
         string calldata _name,
         string calldata _description,
         string calldata _image,
+        string calldata _sectionId,
         string[] memory _candidatesNames,
         uint256 _deadline
     ) public whenNotPaused {
@@ -117,27 +106,32 @@ contract Votium is Ownable, Pausable {
         if (bytes(_description).length == 0 || bytes(_description).length > 200)
             revert InvalidDescriptionLength();
         if (bytes(_image).length == 0) revert InvalidImageLength();
+        if (bytes(_sectionId).length == 0) revert InvalidSectionId();
         if (block.timestamp + (_deadline * 1 minutes) <= block.timestamp)
             revert DeadlineMustBeInFuture();
-        
+
         uint256 candidateCount = _candidatesNames.length;
         if (candidateCount < MIN_CANDIDATES || candidateCount > MAX_CANDIDATES)
             revert InvalidCandidateCount();
 
-        for (uint256 i = 0; i < candidateCount;) {
+        for (uint256 i = 0; i < candidateCount; ) {
             if (bytes(_candidatesNames[i]).length == 0)
                 revert EmptyCandidateName();
 
-            for (uint256 j = i + 1; j < candidateCount;) {
+            for (uint256 j = i + 1; j < candidateCount; ) {
                 if (
                     keccak256(bytes(_candidatesNames[i])) ==
-                        keccak256(bytes(_candidatesNames[j]))
+                    keccak256(bytes(_candidatesNames[j]))
                 ) revert DuplicateCandidateNames();
-                
-                unchecked { ++j; }
+
+                unchecked {
+                    ++j;
+                }
             }
-            
-            unchecked { ++i; }
+
+            unchecked {
+                ++i;
+            }
         }
 
         totalElectionIds++;
@@ -149,18 +143,21 @@ contract Votium is Ownable, Pausable {
         newElection.name = _name;
         newElection.description = _description;
         newElection.image = _image;
-        newElection.deadline = deadline;
+        newElection.sectionId = keccak256(bytes(_sectionId));
+        newElection.deadline = uint64(deadline);
         newElection.totalVotes = 0;
 
-        for (uint256 i = 0; i < candidateCount;) {
+        for (uint256 i = 0; i < candidateCount; ) {
             newElection.candidates.push(
                 CandidateStruct({
-                    candidateId: i + 1,
+                    candidateId: uint32(i + 1),
                     name: _candidatesNames[i],
                     voteCount: 0
                 })
             );
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
         emit ElectionCreated(
             electionId,
@@ -196,25 +193,30 @@ contract Votium is Ownable, Pausable {
      * @param _electionId The ID of the election to vote in
      * @param _candidateId The ID of the candidate to vote for (1-indexed)
      */
-    function vote(uint256 _electionId, uint256 _candidateId)
-        public
-        whenNotPaused
-    {
-        if (bytes(elections[_electionId].name).length == 0)
+    function vote(
+        uint256 _electionId,
+        uint256 _candidateId,
+        string calldata _sectionId
+    ) public whenNotPaused {
+        ElectionStruct storage election = elections[_electionId];
+        
+        if (bytes(election.name).length == 0)
             revert ElectionNotFound();
-        if (elections[_electionId].cancelled)
-            revert ElectionIsCancelled();
-        if (elections[_electionId].hasVoted[msg.sender])
-            revert AlreadyVoted();
-        if (elections[_electionId].deadline <= block.timestamp)
+        if (election.cancelled) revert ElectionIsCancelled();
+        if (election.hasVoted[msg.sender]) revert AlreadyVoted();
+        if (election.sectionId != keccak256(bytes(_sectionId)))
+            revert InvalidSectionId();
+        if (election.deadline <= block.timestamp)
             revert ElectionEnded();
-        if (_candidateId == 0 || _candidateId > elections[_electionId].candidates.length)
-            revert InvalidCandidateId();
+        if (
+            _candidateId == 0 ||
+            _candidateId > election.candidates.length
+        ) revert InvalidCandidateId();
 
-        elections[_electionId].hasVoted[msg.sender] = true;
+        election.hasVoted[msg.sender] = true;
         uint256 index = _candidateId - 1;
-        elections[_electionId].candidates[index].voteCount++;
-        elections[_electionId].totalVotes++;
+        election.candidates[index].voteCount++;
+        election.totalVotes++;
         emit VoteSubmitted(_electionId, msg.sender, _candidateId);
     }
 
@@ -239,6 +241,17 @@ contract Votium is Ownable, Pausable {
         bool cancelled;
     }
 
+    struct ElectionWithCandidates {
+        string name;
+        string description;
+        string image;
+        uint256 deadline;
+        uint256 totalVotes;
+        CandidateStruct[] candidates;
+        bool hasVoted;
+        bool cancelled;
+    }
+
     /**
      * @notice Retrieves all elections with their current state
      * @dev Returns array of all elections
@@ -248,7 +261,7 @@ contract Votium is Ownable, Pausable {
         ElectionView[] memory electionsArr = new ElectionView[](
             totalElectionIds
         );
-        for (uint256 i = 0; i < totalElectionIds;) {
+        for (uint256 i = 0; i < totalElectionIds; ) {
             ElectionStruct storage e = elections[i + 1];
             electionsArr[i] = ElectionView({
                 name: e.name,
@@ -259,11 +272,12 @@ contract Votium is Ownable, Pausable {
                 hasVoted: e.hasVoted[msg.sender],
                 cancelled: e.cancelled
             });
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
         return electionsArr;
     }
-
 
     /**
      * @notice Retrieves basic details for a specific election
@@ -271,14 +285,12 @@ contract Votium is Ownable, Pausable {
      * @param _electionId The ID of the election to retrieve
      * @return ElectionView struct containing election details
      */
-    function getElectionById(uint256 _electionId)
-        external
-        view
-        returns (ElectionView memory)
-    {
+    function getElectionById(
+        uint256 _electionId
+    ) external view returns (ElectionView memory) {
         if (bytes(elections[_electionId].name).length == 0)
             revert ElectionNotFound();
-        
+
         ElectionStruct storage e = elections[_electionId];
         return
             ElectionView({
@@ -298,16 +310,14 @@ contract Votium is Ownable, Pausable {
      * @param _electionId The ID of the election to retrieve
      * @return ElectionViewResult struct containing election details and results
      */
-    function getElectionByIdWithResult(uint256 _electionId)
-        external
-        view
-        returns (ElectionViewResult memory)
-    {
+    function getElectionByIdWithResult(
+        uint256 _electionId
+    ) external view returns (ElectionViewResult memory) {
         if (bytes(elections[_electionId].name).length == 0)
             revert ElectionNotFound();
         if (elections[_electionId].deadline > block.timestamp)
             revert ElectionNotEndedYet();
-        
+
         ElectionStruct storage e = elections[_electionId];
         return
             ElectionViewResult({
@@ -320,6 +330,46 @@ contract Votium is Ownable, Pausable {
                 hasVoted: e.hasVoted[msg.sender],
                 cancelled: e.cancelled
             });
+    }
+
+    /**
+     * @notice Retrieves election with candidate names (vote counts hidden until deadline)
+     * @dev Allows voters to see candidates during active elections
+     * @param _electionId The ID of the election to retrieve
+     * @return ElectionWithCandidates struct with candidates (vote counts set to 0 if election is active)
+     */
+    function getElectionWithCandidates(
+        uint256 _electionId
+    ) external view returns (ElectionWithCandidates memory) {
+        if (bytes(elections[_electionId].name).length == 0)
+            revert ElectionNotFound();
+
+        ElectionStruct storage e = elections[_electionId];
+        uint256 len = e.candidates.length;
+        CandidateStruct[] memory candidates = new CandidateStruct[](len);
+        
+        // Hide vote counts if election is still active
+        bool isActive = e.deadline > block.timestamp;
+        
+        for (uint256 i = 0; i < len; ) {
+            candidates[i] = CandidateStruct({
+                candidateId: e.candidates[i].candidateId,
+                name: e.candidates[i].name,
+                voteCount: isActive ? 0 : e.candidates[i].voteCount
+            });
+            unchecked { ++i; }
+        }
+        
+        return ElectionWithCandidates({
+            name: e.name,
+            description: e.description,
+            image: e.image,
+            deadline: e.deadline,
+            totalVotes: isActive ? 0 : e.totalVotes,
+            candidates: candidates,
+            hasVoted: e.hasVoted[msg.sender],
+            cancelled: e.cancelled
+        });
     }
 
     /**

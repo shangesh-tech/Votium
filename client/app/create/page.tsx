@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Plus, Trash2, ArrowLeft, Loader2 } from "lucide-react";
 import { useActiveAccount, useSendTransaction } from "thirdweb/react";
 import { getContract, prepareContractCall } from "thirdweb";
+import { upload } from "thirdweb/storage";
 import { defaultChain } from "@/lib/chains";
 import { client } from "@/lib/client";
 import toast from "react-hot-toast";
@@ -22,9 +23,12 @@ export default function CreateElection() {
   
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [image, setImage] = useState("");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string>("");
+  const [sectionId, setSectionId] = useState("");
   const [deadline, setDeadline] = useState("");
   const [candidates, setCandidates] = useState(["", ""]);
+  const [isUploading, setIsUploading] = useState(false);
 
   const addCandidate = () => {
     if (candidates.length < 6) {
@@ -44,6 +48,26 @@ export default function CreateElection() {
     setCandidates(updated);
   };
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (!file.type.startsWith("image/")) {
+        toast.error("Please select an image file");
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) { // 10MB limit
+        toast.error("Image size must be less than 10MB");
+        return;
+      }
+      setSelectedFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -61,8 +85,12 @@ export default function CreateElection() {
       toast.error("Description must be 1-200 characters");
       return;
     }
-    if (!image) {
-      toast.error("Image URL is required");
+    if (!selectedFile) {
+      toast.error("Please select an image");
+      return;
+    }
+    if (!sectionId) {
+      toast.error("Section ID is required");
       return;
     }
     if (!deadline || Number(deadline) <= 0) {
@@ -75,11 +103,25 @@ export default function CreateElection() {
     }
 
     try {
+      // Upload image to IPFS
+      setIsUploading(true);
+      toast.loading("Uploading image to IPFS...", { id: "upload" });
+      
+      const uris = await upload({
+        client,
+        files: [selectedFile],
+      });
+      
+      const imageUrl = uris[0];
+      toast.success("Image uploaded successfully!", { id: "upload" });
+      setIsUploading(false);
+
+      // Create election transaction
       const transaction = prepareContractCall({
         contract,
         method:
-          "function createElection(string _name, string _description, string _image, string[] _candidatesNames, uint256 _deadline)",
-        params: [name, description, image, candidates, BigInt(deadline)],
+          "function createElection(string _name, string _description, string _image, string _sectionId, string[] _candidatesNames, uint256 _deadline)",
+        params: [name, description, imageUrl, sectionId, candidates, BigInt(deadline)],
       });
 
       sendTransaction(transaction, {
@@ -94,7 +136,9 @@ export default function CreateElection() {
       });
     } catch (error) {
       console.error("Transaction error:", error);
-      toast.error("Failed to prepare transaction");
+      setIsUploading(false);
+      toast.dismiss("upload");
+      toast.error("Failed to upload image or prepare transaction");
     }
   };
 
@@ -181,20 +225,75 @@ export default function CreateElection() {
               </div>
 
               <div className="space-y-2">
+                <label className="text-sm font-medium text-black">
+                  Cover Image
+                </label>
+                {!selectedFile ? (
+                  <div className="relative">
+                    <input
+                      id="image"
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileChange}
+                      className="hidden"
+                    />
+                    <label
+                      htmlFor="image"
+                      className="flex flex-col items-center justify-center w-full h-40 border-2 border-gray-200 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors"
+                    >
+                      <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                        <Plus className="h-10 w-10 text-gray-400 mb-3" />
+                        <p className="mb-2 text-sm text-gray-600">
+                          <span className="font-semibold">Click to upload</span> or drag and drop
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          PNG, JPG, GIF up to 10MB
+                        </p>
+                      </div>
+                    </label>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <img
+                      src={imagePreview}
+                      alt="Preview"
+                      className="w-full h-40 object-cover rounded-lg"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedFile(null);
+                        setImagePreview("");
+                      }}
+                      className="absolute top-2 right-2 inline-flex items-center justify-center w-8 h-8 rounded-full bg-black text-white hover:bg-gray-800 transition-colors"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
+                <p className="text-xs text-gray-500">
+                  Image will be uploaded to IPFS automatically
+                </p>
+              </div>
+
+              <div className="space-y-2">
                 <label
-                  htmlFor="image"
+                  htmlFor="sectionId"
                   className="text-sm font-medium text-black"
                 >
-                  Cover Image URL
+                  Section ID
                 </label>
                 <input
-                  id="image"
+                  id="sectionId"
                   type="text"
-                  placeholder="https://... or ipfs://..."
-                  value={image}
-                  onChange={(e) => setImage(e.target.value)}
+                  placeholder='e.g., "S69" or "All"'
+                  value={sectionId}
+                  onChange={(e) => setSectionId(e.target.value)}
                   className="flex h-11 w-full rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
                 />
+                <p className="text-xs text-gray-500">
+                  Section identifier for voter eligibility
+                </p>
               </div>
 
               <div className="space-y-2">
@@ -256,10 +355,15 @@ export default function CreateElection() {
 
               <button
                 type="submit"
-                disabled={isPending}
+                disabled={isPending || isUploading}
                 className="inline-flex h-12 w-full items-center justify-center rounded-lg bg-black text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isPending ? (
+                {isUploading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Uploading to IPFS...
+                  </>
+                ) : isPending ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Creating...

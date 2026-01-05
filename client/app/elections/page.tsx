@@ -9,22 +9,14 @@ import { getContract, readContract } from "thirdweb";
 import { defaultChain } from "@/lib/chains";
 import { client } from "@/lib/client";
 
-type Candidate = {
-  candidateId: bigint;
-  name: string;
-  voteCount: bigint;
-};
-
-type Election = {
-  creatorAddress: string;
-  cancelled: boolean;
-  sectionId: string;
+type ElectionView = {
   name: string;
   description: string;
   image: string;
-  candidates: Candidate[];
   deadline: bigint;
   totalVotes: bigint;
+  hasVoted: boolean;
+  cancelled: boolean;
 };
 
 const contract = getContract({
@@ -34,7 +26,7 @@ const contract = getContract({
 });
 
 export default function Elections() {
-  const [elections, setElections] = useState<Election[] | null>(null);
+  const [elections, setElections] = useState<ElectionView[] | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [userFilter, setUserFilter] = useState<"all" | "active" | "ended">(
     "all"
@@ -84,13 +76,13 @@ export default function Elections() {
         const data = await readContract({
           contract,
           method:
-            "function getMyElections() view returns ((address creatorAddress, bool cancelled, bytes32 sectionId, string name, string description, string image, tuple(uint256 candidateId, string name, uint256 voteCount)[] candidates, uint256 deadline, uint256 totalVotes)[])",
+            "function getElections() view returns ((string name, string description, string image, uint256 deadline, uint256 totalVotes, bool hasVoted, bool cancelled)[])",
           params: [],
           from: account.address as `0x${string}`,
         });
 
         console.log("Elections found:", data);
-        setElections(data as Election[]);
+        setElections(data as ElectionView[]);
       } catch (err: any) {
         console.log("No Elections exist:", err.message);
         setElections(null);
@@ -208,14 +200,14 @@ export default function Elections() {
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {filteredElections.map((election, index) => (
               <ElectionCard
-                key={election.sectionId}
+                key={index}
                 id={index + 1}
                 name={election.name}
                 description={election.description}
                 image={election.image}
                 deadline={Number(election.deadline)}
                 totalVotes={Number(election.totalVotes)}
-                hasVoted={false}
+                hasVoted={election.hasVoted}
                 cancelled={election.cancelled}
               />
             ))}

@@ -52,7 +52,7 @@ export default function Results({ params }: { params: Promise<{ id: string }> })
         const data = await readContract({
           contract,
           method:
-            "function getElectionByIdWithResult(uint256 _electionId) view returns ((string name, string description, string image, uint256 deadline, uint256 totalVotes, tuple(uint256 candidateId, string name, uint256 voteCount)[] candidates, bool hasVoted, bool cancelled))",
+            "function getElectionByIdWithResult(uint256 _electionId) view returns ((string name, string description, string image, uint256 deadline, uint256 totalVotes, tuple(uint32 candidateId, uint32 voteCount, string name)[] candidates, bool hasVoted, bool cancelled))",
           params: [BigInt(id)],
           from: account.address as `0x${string}`,
         });

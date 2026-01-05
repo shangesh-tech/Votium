@@ -9,12 +9,19 @@ import { defaultChain } from "@/lib/chains";
 import { client } from "@/lib/client";
 import toast from "react-hot-toast";
 
-type ElectionView = {
+type Candidate = {
+  candidateId: bigint;
+  name: string;
+  voteCount: bigint;
+};
+
+type ElectionWithCandidates = {
   name: string;
   description: string;
   image: string;
   deadline: bigint;
   totalVotes: bigint;
+  candidates: Candidate[];
   hasVoted: boolean;
   cancelled: boolean;
 };
@@ -31,8 +38,9 @@ export default function ElectionDetail({ params }: { params: Promise<{ id: strin
   const account = useActiveAccount();
   const { mutate: sendTransaction, isPending } = useSendTransaction();
   
-  const [election, setElection] = useState<ElectionView | null>(null);
+  const [election, setElection] = useState<ElectionWithCandidates | null>(null);
   const [selectedCandidate, setSelectedCandidate] = useState<string>("");
+  const [sectionId, setSectionId] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
 
   const now = useMemo(() => Date.now(), [election]);
@@ -51,12 +59,12 @@ export default function ElectionDetail({ params }: { params: Promise<{ id: strin
         const data = await readContract({
           contract,
           method:
-            "function getElectionById(uint256 _electionId) view returns ((string name, string description, string image, uint256 deadline, uint256 totalVotes, bool hasVoted, bool cancelled))",
+            "function getElectionWithCandidates(uint256 _electionId) view returns ((string name, string description, string image, uint256 deadline, uint256 totalVotes, tuple(uint32 candidateId, uint32 voteCount, string name)[] candidates, bool hasVoted, bool cancelled))",
           params: [BigInt(id)],
           from: account.address as `0x${string}`,
         });
 
-        setElection(data as ElectionView);
+        setElection(data as ElectionWithCandidates);
       } catch (err: any) {
         console.error("Error fetching election:", err);
         toast.error("Failed to load election");
@@ -83,12 +91,16 @@ export default function ElectionDetail({ params }: { params: Promise<{ id: strin
       toast.error("Please select a candidate");
       return;
     }
+    if (!sectionId) {
+      toast.error("Please enter your section ID");
+      return;
+    }
 
     try {
       const transaction = prepareContractCall({
         contract,
-        method: "function vote(uint256 _electionId, uint256 _candidateId)",
-        params: [BigInt(id), BigInt(selectedCandidate)],
+        method: "function vote(uint256 _electionId, uint256 _candidateId, string _sectionId)",
+        params: [BigInt(id), BigInt(selectedCandidate), sectionId],
       });
 
       sendTransaction(transaction, {
@@ -251,16 +263,33 @@ export default function ElectionDetail({ params }: { params: Promise<{ id: strin
                   </div>
                 ) : (
                   <>
+                    <div className="mb-4 space-y-2">
+                      <label
+                        htmlFor="sectionId"
+                        className="text-sm font-medium text-black"
+                      >
+                        Your Section ID
+                      </label>
+                      <input
+                        id="sectionId"
+                        type="text"
+                        placeholder='Enter your section ID (e.g., "S69")'
+                        value={sectionId}
+                        onChange={(e) => setSectionId(e.target.value)}
+                        className="flex h-11 w-full rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
+                      />
+                    </div>
+                    
                     <p className="mb-4 text-sm text-gray-600">
                       Select a candidate below to cast your vote. Note: Votes are permanent and cannot be changed.
                     </p>
                     
                     <div className="space-y-3 mb-6">
-                      {[1, 2, 3, 4, 5, 6].map((candidateId) => (
+                      {election.candidates.map((candidate) => (
                         <label
-                          key={candidateId}
+                          key={Number(candidate.candidateId)}
                           className={`flex cursor-pointer items-center space-x-3 rounded-lg border p-4 transition-all hover:bg-gray-50 ${
-                            selectedCandidate === candidateId.toString()
+                            selectedCandidate === candidate.candidateId.toString()
                               ? "border-black bg-gray-50 ring-2 ring-black ring-offset-2"
                               : "border-gray-200"
                           }`}
@@ -268,13 +297,13 @@ export default function ElectionDetail({ params }: { params: Promise<{ id: strin
                           <input
                             type="radio"
                             name="candidate"
-                            value={candidateId.toString()}
-                            checked={selectedCandidate === candidateId.toString()}
+                            value={candidate.candidateId.toString()}
+                            checked={selectedCandidate === candidate.candidateId.toString()}
                             onChange={(e) => setSelectedCandidate(e.target.value)}
                             className="h-4 w-4 border-gray-300 text-black focus:ring-black"
                           />
                           <span className="flex-1 font-medium text-black">
-                            Candidate {candidateId}
+                            {candidate.name}
                           </span>
                         </label>
                       ))}
