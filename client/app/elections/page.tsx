@@ -274,7 +274,7 @@ export default function Elections() {
           </a>
         </div>
 
-        <div className="mt-10 flex flex-col items-center animate-fade-in-up">
+        <div className="mt-2 flex flex-col items-center animate-fade-in-up">
           <div className="flex items-center gap-3 px-5 py-2.5 rounded-full bg-white/50 backdrop-blur-sm border border-white/60 shadow-sm hover:shadow-md transition-all duration-300">
             <span className="text-xs font-medium text-gray-500 tracking-wide uppercase">
               Powered by
