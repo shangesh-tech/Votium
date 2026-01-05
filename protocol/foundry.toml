@@ -9,7 +9,7 @@ via_ir = true
 
 # RPC endpoints
 [rpc_endpoints]
-polygon_amoy = "${ALCHEMY_Amoy_RPC_URL}"
+sepolia_base = "${SEPOLIA_BASE_RPC_URL}"
 
 # Etherscan API configuration
 [etherscan]
