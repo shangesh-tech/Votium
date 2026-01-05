@@ -37,9 +37,9 @@ export default function Elections() {
 
   const filteredElections = useMemo(() => {
     if (!elections) return null;
-    
+
     const now = Date.now();
-    
+
     return elections
       .filter((election) =>
         searchQuery
@@ -50,15 +50,15 @@ export default function Elections() {
         if (userFilter === "all") {
           return true;
         }
-        
+
         const deadlineMs = Number(election.deadline) * 1000;
-        
+
         if (userFilter === "active") {
           return now < deadlineMs && !election.cancelled;
         } else if (userFilter === "ended") {
           return now >= deadlineMs || election.cancelled;
         }
-        
+
         return true;
       });
   }, [elections, searchQuery, userFilter]);
@@ -91,10 +91,10 @@ export default function Elections() {
                   { name: "deadline", type: "uint256" },
                   { name: "totalVotes", type: "uint256" },
                   { name: "hasVoted", type: "bool" },
-                  { name: "cancelled", type: "bool" }
-                ]
-              }
-            ]
+                  { name: "cancelled", type: "bool" },
+                ],
+              },
+            ],
           },
           params: [],
           from: account.address as `0x${string}`,
@@ -113,7 +113,7 @@ export default function Elections() {
     checkPortfolio();
   }, [account?.address]);
 
-    if (isReadingElections) {
+  if (isReadingElections) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -232,6 +232,39 @@ export default function Elections() {
             ))}
           </div>
         )}
+
+        <div className="mt-10 flex flex-col items-center animate-fade-in-up">
+          <div className="flex items-center gap-3 px-5 py-2.5 rounded-full bg-white/50 backdrop-blur-sm border border-white/60 shadow-sm hover:shadow-md transition-all duration-300">
+            <span className="text-xs font-medium text-gray-500 tracking-wide uppercase">
+              Powered by
+            </span>
+            <div className="flex items-center gap-2 pl-2 border-l border-gray-200">
+              <div className="flex items-center gap-1.5 group">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="https://cryptologos.cc/logos/ethereum-eth-logo.png"
+                  alt="Ethereum"
+                  className="h-5 w-auto object-contain opacity-80 group-hover:opacity-100 transition-opacity"
+                />
+                <span className="text-sm font-semibold text-gray-700 group-hover:text-gray-900 transition-colors">
+                  Ethereum
+                </span>
+              </div>
+              <span className="text-gray-300 px-1 font-light">×</span>
+              <div className="flex items-center gap-1.5 group">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="https://avatars.githubusercontent.com/u/108554348?s=280&v=4"
+                  alt="base"
+                  className="h-5 w-auto object-contain opacity-80 group-hover:opacity-100 transition-opacity"
+                />
+                <span className="text-sm font-semibold text-gray-700 group-hover:text-gray-900 transition-colors">
+                  Base
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
       </main>
     </div>
   );
