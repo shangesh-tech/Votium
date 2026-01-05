@@ -39,6 +39,7 @@ contract Votium is Ownable, Pausable {
     struct ElectionStruct {
         address creatorAddress;
         bool cancelled; // Packed with address in same storage slot
+        bytes32  sectionId;
         string name;
         string description;
         string image;
@@ -47,6 +48,32 @@ contract Votium is Ownable, Pausable {
         mapping(address => bool) hasVoted;
         uint256 totalVotes;
     }
+
+//     struct ElectionStruct {
+//     // ---- Slot 0 (packed) ----
+//     address creatorAddress; // 20 bytes
+//     bool cancelled;         // 1 byte
+
+//     // 11 bytes padding
+
+//     // ---- Slot 1 ----
+//     bytes32 sectionId;      // keccak256("S69")
+
+//     // ---- Slot 2 ----
+//     uint64 deadline;    // 8 bytes  
+//     uint32 totalVotes;  // 4 bytes  
+//     // 20 bytes padding
+
+//     // ---- Dynamic data ----
+//     string name;
+//     string description;
+//     string image;
+//     CandidateStruct[] candidates;
+
+//     // ---- Always last ----
+//     mapping(address => bool) hasVoted;
+// }
+
 
     mapping(uint256 => ElectionStruct) private elections;
 
