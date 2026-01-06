@@ -1,6 +1,6 @@
 "use client";
 
-import {  useEffect, useState, useMemo } from "react";
+import { use, useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Trophy, Users, Clock, Loader2 } from "lucide-react";
 import { useActiveAccount } from "thirdweb/react";
@@ -32,8 +32,8 @@ const contract = getContract({
   address: process.env.NEXT_PUBLIC_VOTIUM_CONTRACT_ADDRESS!,
 });
 
-export default function Results({ params }: { params: { id: string } }) {
-  const { id } = params;
+export default function Results({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
   const router = useRouter();
   const account = useActiveAccount();
   
