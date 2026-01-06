@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useState, useMemo } from "react";
+import {  useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Trophy, Users, Clock, Loader2 } from "lucide-react";
 import { useActiveAccount } from "thirdweb/react";
@@ -32,8 +32,8 @@ const contract = getContract({
   address: process.env.NEXT_PUBLIC_VOTIUM_CONTRACT_ADDRESS!,
 });
 
-export default function Results({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+export default function Results({ params }: { params: { id: string } }) {
+  const { id } = params;
   const router = useRouter();
   const account = useActiveAccount();
   
@@ -111,7 +111,6 @@ export default function Results({ params }: { params: Promise<{ id: string }> })
         };
         setElection(electionData);
         
-        // Resolve IPFS URL to HTTP only if it's an IPFS URI
         if (data.image) {
           if (data.image.startsWith('ipfs://')) {
             const resolved = await resolveScheme({
@@ -119,15 +118,9 @@ export default function Results({ params }: { params: Promise<{ id: string }> })
               uri: data.image,
             });
             setImageUrl(resolved);
-          } else if (data.image.startsWith('http')) {
-            // Already an HTTP URL
-            setImageUrl(data.image);
-          } else {
-            // Assume it's an IPFS hash and construct the URL
-            setImageUrl(`https://ipfs.io/ipfs/${data.image}`);
-          }
+          } 
         }
-      } catch (err: any) {
+      } catch (err) {
         console.error("Error fetching results:", err);
       } finally {
         setIsLoading(false);

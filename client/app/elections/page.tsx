@@ -8,13 +8,13 @@ import {
   Filter,
   Loader2,
   ExternalLink,
-  Shield
+  Shield,
 } from "lucide-react";
 import Link from "next/link";
 import { useActiveAccount } from "thirdweb/react";
-import { getContract, readContract } from "thirdweb";
+import { readContract } from "thirdweb";
 import { defaultChain } from "@/lib/chains";
-import { client } from "@/lib/client";
+import { VotiumContract } from "@/lib/client";
 
 type ElectionView = {
   name: string;
@@ -26,16 +26,9 @@ type ElectionView = {
   cancelled: boolean;
 };
 
-const contract = getContract({
-  client,
-  chain: defaultChain,
-  address: process.env.NEXT_PUBLIC_VOTIUM_CONTRACT_ADDRESS!,
-});
-
 // Get chain explorer URL
 const getExplorerUrl = () => {
-  const explorerBaseUrl =
-    defaultChain.blockExplorers?.[0]?.url;
+  const explorerBaseUrl = defaultChain.blockExplorers?.[0]?.url;
   return `${explorerBaseUrl}/address/${process.env.NEXT_PUBLIC_VOTIUM_CONTRACT_ADDRESS}`;
 };
 
@@ -50,45 +43,49 @@ export default function Elections() {
   const account = useActiveAccount();
 
   const filteredElections = useMemo(() => {
-    if (!elections) return null;
+    if (!elections) return [];
 
     const now = Date.now();
+    const query = searchQuery.trim().toLowerCase();
 
-    return elections
-      .filter((election) =>
-        searchQuery
-          ? election.name.toLowerCase().includes(searchQuery.toLowerCase())
-          : true
-      )
-      .filter((election) => {
-        if (userFilter === "all") {
-          return true;
-        }
+    return elections.filter((election) => {
+      // search filter
+      if (query && !election.name.toLowerCase().includes(query)) {
+        return false;
+      }
 
-        const deadlineMs = Number(election.deadline) * 1000;
-
-        if (userFilter === "active") {
-          return now < deadlineMs && !election.cancelled;
-        } else if (userFilter === "ended") {
-          return now >= deadlineMs || election.cancelled;
-        }
-
+      // status filter
+      if (userFilter === "all") {
         return true;
-      });
+      }
+
+      const deadlineMs = Number(election.deadline) * 1000;
+
+      if (userFilter === "active") {
+        return now < deadlineMs && !election.cancelled;
+      }
+
+      if (userFilter === "ended") {
+        return now >= deadlineMs || election.cancelled;
+      }
+
+      return true;
+    });
   }, [elections, searchQuery, userFilter]);
+
+  console.log("Filtered Elections:", filteredElections);
 
   useEffect(() => {
     if (!account?.address) {
       setIsReading(false);
-      return;
     }
 
-    const checkPortfolio = async () => {
+    const fetchElections = async () => {
       try {
         setIsReading(true);
 
         const data = await readContract({
-          contract,
+          contract: VotiumContract,
           method: {
             name: "getElections",
             type: "function",
@@ -111,7 +108,7 @@ export default function Elections() {
             ],
           },
           params: [],
-          from: account.address as `0x${string}`,
+          from: account?.address as `0x${string}`,
         });
 
         console.log("Elections found:", data);
@@ -124,7 +121,7 @@ export default function Elections() {
       }
     };
 
-    checkPortfolio();
+    fetchElections();
   }, [account?.address]);
 
   if (isReadingElections) {
@@ -231,6 +228,7 @@ export default function Elections() {
           </div>
         ) : (
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            
             {filteredElections.map((election, index) => (
               <ElectionCard
                 key={index}
@@ -252,7 +250,7 @@ export default function Elections() {
             href={getExplorerUrl()}
             target="_blank"
             rel="noopener noreferrer"
-            className="group inline-flex items-center gap-3 px-6 py-3 rounded-full bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 hover:border-green-300 transition-all duration-300 hover:shadow-lg hover:scale-105"
+            className="group inline-flex items-center gap-3 px-6 py-3 rounded-full bg-linear-to-r from-green-50 to-emerald-50 border border-green-200 hover:border-green-300 transition-all duration-300 hover:shadow-lg hover:scale-105"
           >
             <div className="flex items-center justify-center w-10 h-10 rounded-full bg-green-100 group-hover:bg-green-200 transition-colors">
               <Shield className="w-5 h-5 text-green-600" />
