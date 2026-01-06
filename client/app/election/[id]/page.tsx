@@ -11,9 +11,8 @@ import {
   Loader2,
 } from "lucide-react";
 import { useActiveAccount, useSendTransaction } from "thirdweb/react";
-import { getContract, prepareContractCall, readContract } from "thirdweb";
+import { prepareContractCall, readContract } from "thirdweb";
 import { resolveScheme } from "thirdweb/storage";
-import { defaultChain } from "@/lib/chains";
 import { client, VotiumContract } from "@/lib/client";
 import toast from "react-hot-toast";
 
@@ -80,6 +79,7 @@ export default function ElectionDetail({
 
   const [election, setElection] = useState<ElectionWithCandidates | null>(null);
   const [selectedCandidate, setSelectedCandidate] = useState<string>("");
+  const [sectionId, setSectionId] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
   const [imageUrl, setImageUrl] = useState<string>("");
 
@@ -155,7 +155,7 @@ export default function ElectionDetail({
             setImageUrl(resolved);
           }
         }
-      } catch (err: any) {
+      } catch (err) {
         console.error("Error fetching election:", err);
         toast.error("Failed to load election");
       } finally {
@@ -165,12 +165,6 @@ export default function ElectionDetail({
 
     fetchElection();
   }, [account?.address, id]);
-
-  const extractSectionId = (): string => {
-    const email = (account as any)?.email || "";
-    const match = email.match(/\.s\.([^@]+)@/);
-    return match?.[1] || "";
-  };
 
   const deadlineMs = election ? Number(election.deadline) * 1000 : 0;
   const timeLeft = useTimeLeft(deadlineMs, election?.cancelled || false);
@@ -182,11 +176,8 @@ export default function ElectionDetail({
       return;
     }
 
-    const sectionId = extractSectionId();
-    if (!sectionId) {
-      toast.error(
-        "Could not determine your section ID. Check your email format."
-      );
+    if (!sectionId.trim()) {
+      toast.error("Please enter your section ID");
       return;
     }
 
@@ -195,7 +186,7 @@ export default function ElectionDetail({
         contract: VotiumContract,
         method:
           "function vote(uint256 _electionId, uint256 _candidateId, string _sectionId)",
-        params: [BigInt(id), BigInt(selectedCandidate), sectionId],
+        params: [BigInt(id), BigInt(selectedCandidate), sectionId.trim()],
       });
 
       sendTransaction(transaction, {
@@ -316,6 +307,8 @@ export default function ElectionDetail({
                     candidates={election.candidates}
                     selectedCandidate={selectedCandidate}
                     setSelectedCandidate={setSelectedCandidate}
+                    sectionId={sectionId}
+                    setSectionId={setSectionId}
                     handleVote={handleVote}
                     isPending={isPending}
                   />
@@ -354,7 +347,7 @@ const LoadingView = () => (
   </div>
 );
 
-const ElectionNotFoundView = ({ router }: { router: any }) => (
+const ElectionNotFoundView = ({ router }: { router: ReturnType<typeof useRouter> }) => (
   <div className="min-h-screen bg-gray-50 flex items-center justify-center py-20">
     <div className="text-center">
       <h1 className="text-2xl font-bold text-gray-900 mb-4">
@@ -370,7 +363,15 @@ const ElectionNotFoundView = ({ router }: { router: any }) => (
   </div>
 );
 
-const ElectionEndedView = ({ election, router, id }: any) => (
+const ElectionEndedView = ({ 
+  election, 
+  router, 
+  id 
+}: { 
+  election: ElectionWithCandidates;
+  router: ReturnType<typeof useRouter>;
+  id: string;
+}) => (
   <div className="text-center space-y-4">
     <p className="text-gray-600">
       {election.cancelled
@@ -393,10 +394,37 @@ const VoteForm = ({
   candidates,
   selectedCandidate,
   setSelectedCandidate,
+  sectionId,
+  setSectionId,
   handleVote,
   isPending,
-}: any) => (
+}: {
+  candidates: Candidate[];
+  selectedCandidate: string;
+  setSelectedCandidate: (value: string) => void;
+  sectionId: string;
+  setSectionId: (value: string) => void;
+  handleVote: () => void;
+  isPending: boolean;
+}) => (
   <>
+    <div className="mb-4 space-y-2">
+      <label
+        htmlFor="sectionId"
+        className="text-sm font-medium text-black"
+      >
+        Your Section ID
+      </label>
+      <input
+        id="sectionId"
+        type="text"
+        placeholder='Enter your section ID (e.g., "S69")'
+        value={sectionId}
+        onChange={(e) => setSectionId(e.target.value)}
+        className="flex h-11 w-full rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
+      />
+    </div>
+
     <p className="mb-4 text-sm text-gray-600">
       Select a candidate below to cast your vote. Note: Votes are permanent and
       cannot be changed.
