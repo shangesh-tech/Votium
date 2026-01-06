@@ -59,10 +59,12 @@ export default function Results({ params }: { params: { id: string } }) {
     const fetchResults = async () => {
       try {
         setIsLoading(true);
+        // Use getElectionWithCandidates which works for both active and ended elections
+        // Vote counts are automatically hidden by contract if election is active
         const data = await readContract({
           contract,
           method: {
-            name: "getElectionByIdWithResult",
+            name: "getElectionWithCandidates",
             type: "function",
             stateMutability: "view",
             inputs: [{ name: "_electionId", type: "uint256" }],
@@ -204,6 +206,28 @@ export default function Results({ params }: { params: { id: string } }) {
     return (
       <div className="min-h-screen bg-gray-50">
         <div className="flex items-center justify-center py-20">
+          <div className="text-center">
+            <h1 className="text-2xl font-bold text-gray-900 mb-4">
+              Election Not Found
+            </h1>
+            <button
+              onClick={() => router.push("/elections")}
+              className="inline-flex items-center gap-2 text-black hover:underline"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back to Elections
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show "in progress" UI if election hasn't ended yet
+  if (!isEnded && !election.cancelled) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="flex items-center justify-center py-20">
           <div className="text-center max-w-md">
             <div className="mb-6 inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-100">
               <Clock className="h-8 w-8 text-blue-600 animate-pulse" />
@@ -214,14 +238,12 @@ export default function Results({ params }: { params: { id: string } }) {
             <p className="text-gray-600 mb-6">
               This election is currently ongoing. Results will be available once the voting period ends.
             </p>
-            {deadlineMs > 0 && (
-              <div className="mb-6 p-4 bg-white rounded-lg border border-gray-200">
-                <p className="text-sm text-gray-500 mb-2">Time Remaining</p>
-                <p className="text-3xl font-bold text-black">
-                  {formatTimeLeft()}
-                </p>
-              </div>
-            )}
+            <div className="mb-6 p-4 bg-white rounded-lg border border-gray-200">
+              <p className="text-sm text-gray-500 mb-2">Time Remaining</p>
+              <p className="text-3xl font-bold text-black">
+                {formatTimeLeft()}
+              </p>
+            </div>
             <button
               onClick={() => router.push("/elections")}
               className="inline-flex items-center gap-2 text-black hover:underline"
