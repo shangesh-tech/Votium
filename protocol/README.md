@@ -1,6 +1,8 @@
 ## Depolyment Script
 
 ```shell
+forge clean && forge build
+
 source .env
 
 forge script script/Votium.s.sol --rpc-url sepolia_base --broadcast --verify -vvvv
